@@ -3,7 +3,46 @@
  * Developer: Stephan Coertzen <coertzen.jfs@gmail.com>
  * License: MIT
  */
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, session } = require('electron');
+
+const START_URL = 'https://chatgpt.com';
+const APP_HOST_SUFFIXES = ['chatgpt.com', 'openai.com'];
+const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
+const ALLOWED_PERMISSIONS = new Set(['media', 'notifications']);
+
+function parseUrl(url) {
+  try {
+    return new URL(url);
+  } catch {
+    return null;
+  }
+}
+
+function isAppUrl(url) {
+  const parsedUrl = parseUrl(url);
+
+  if (!parsedUrl || parsedUrl.protocol !== 'https:') {
+    return false;
+  }
+
+  return APP_HOST_SUFFIXES.some((hostSuffix) => (
+    parsedUrl.hostname === hostSuffix || parsedUrl.hostname.endsWith(`.${hostSuffix}`)
+  ));
+}
+
+function isSafeExternalUrl(url) {
+  const parsedUrl = parseUrl(url);
+
+  return Boolean(parsedUrl && EXTERNAL_PROTOCOLS.has(parsedUrl.protocol));
+}
+
+function openExternalIfSafe(url) {
+  if (!isSafeExternalUrl(url)) {
+    return;
+  }
+
+  shell.openExternal(url);
+}
 
 const REFRESH_BUTTON_SCRIPT = `
 (() => {
@@ -97,13 +136,34 @@ function createWindow() {
       preload: require('path').join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false
     }
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url);
+    openExternalIfSafe(url);
     return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    openExternalIfSafe(url);
+  });
+
+  win.webContents.on('will-redirect', (event, url) => {
+    if (isAppUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    openExternalIfSafe(url);
   });
 
   win.webContents.on('before-input-event', (event, input) => {
@@ -117,10 +177,16 @@ function createWindow() {
     injectRefreshButton(win);
   });
 
-  win.loadURL('https://chatgpt.com');
+  win.loadURL(START_URL);
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const requestingUrl = details.requestingUrl || webContents.getURL();
+
+    callback(ALLOWED_PERMISSIONS.has(permission) && isAppUrl(requestingUrl));
+  });
+
   createWindow();
 
   app.on('activate', () => {
