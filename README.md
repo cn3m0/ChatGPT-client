@@ -35,6 +35,22 @@ Build outputs are generated in `dist/`:
 - `.AppImage`
 - `.deb`
 
+## Local POC desktop entry
+
+After building the AppImage, install a local application menu entry:
+
+```bash
+./scripts/install-desktop-entry.sh
+```
+
+This creates `~/.local/share/applications/chatgpt-poc.desktop` pointing to the
+current AppImage in `dist/`.
+
+The POC entry currently starts the AppImage with `--no-sandbox`, which is useful
+for local AppImage testing when the Electron `chrome-sandbox` helper is not
+installed with setuid permissions. Do not treat that as the target packaging
+model for a hardened system install.
+
 ## GitHub Release Flow
 
 Pushing a version tag (for example `v1.0.1`) triggers automated Linux builds and publishes a GitHub Release with attached artifacts. The release page notes are generated from every commit after `releaseNotes.fromHash` in `package.json`.

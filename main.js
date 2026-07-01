@@ -67,6 +67,22 @@ function openExternalIfSafe(url) {
   shell.openExternal(url);
 }
 
+function openTrustedWindow(url, openerWebContents) {
+  const parentWindow = BrowserWindow.fromWebContents(openerWebContents);
+  const authWindow = new BrowserWindow({
+    width: 960,
+    height: 760,
+    minWidth: 720,
+    minHeight: 560,
+    parent: parentWindow || undefined,
+    autoHideMenuBar: true,
+    webPreferences: WINDOW_WEB_PREFERENCES
+  });
+
+  configureWebContents(authWindow.webContents);
+  authWindow.loadURL(url);
+}
+
 function guardNavigation(webContents) {
   webContents.on('will-navigate', (event, url) => {
     if (isTrustedInAppUrl(url)) {
@@ -90,13 +106,8 @@ function guardNavigation(webContents) {
 function guardWindowOpen(webContents) {
   webContents.setWindowOpenHandler(({ url }) => {
     if (isTrustedInAppUrl(url)) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          autoHideMenuBar: true,
-          webPreferences: WINDOW_WEB_PREFERENCES
-        }
-      };
+      openTrustedWindow(url, webContents);
+      return { action: 'deny' };
     }
 
     openExternalIfSafe(url);
