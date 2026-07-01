@@ -7,8 +7,17 @@ const { app, BrowserWindow, shell, session } = require('electron');
 
 const START_URL = 'https://chatgpt.com';
 const APP_HOST_SUFFIXES = ['chatgpt.com', 'openai.com'];
+const AUTH_HOSTS = ['accounts.google.com'];
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 const ALLOWED_PERMISSIONS = new Set(['media', 'notifications']);
+const WINDOW_WEB_PREFERENCES = {
+  contextIsolation: true,
+  nodeIntegration: false,
+  sandbox: true,
+  webSecurity: true,
+  allowRunningInsecureContent: false,
+  webviewTag: false
+};
 
 function parseUrl(url) {
   try {
@@ -30,6 +39,20 @@ function isAppUrl(url) {
   ));
 }
 
+function isAuthUrl(url) {
+  const parsedUrl = parseUrl(url);
+
+  return Boolean(
+    parsedUrl &&
+    parsedUrl.protocol === 'https:' &&
+    AUTH_HOSTS.includes(parsedUrl.hostname)
+  );
+}
+
+function isTrustedInAppUrl(url) {
+  return isAppUrl(url) || isAuthUrl(url);
+}
+
 function isSafeExternalUrl(url) {
   const parsedUrl = parseUrl(url);
 
@@ -42,6 +65,48 @@ function openExternalIfSafe(url) {
   }
 
   shell.openExternal(url);
+}
+
+function guardNavigation(webContents) {
+  webContents.on('will-navigate', (event, url) => {
+    if (isTrustedInAppUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    openExternalIfSafe(url);
+  });
+
+  webContents.on('will-redirect', (event, url) => {
+    if (isTrustedInAppUrl(url)) {
+      return;
+    }
+
+    event.preventDefault();
+    openExternalIfSafe(url);
+  });
+}
+
+function guardWindowOpen(webContents) {
+  webContents.setWindowOpenHandler(({ url }) => {
+    if (isTrustedInAppUrl(url)) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          autoHideMenuBar: true,
+          webPreferences: WINDOW_WEB_PREFERENCES
+        }
+      };
+    }
+
+    openExternalIfSafe(url);
+    return { action: 'deny' };
+  });
+}
+
+function configureWebContents(webContents) {
+  guardWindowOpen(webContents);
+  guardNavigation(webContents);
 }
 
 const REFRESH_BUTTON_SCRIPT = `
@@ -134,37 +199,15 @@ function createWindow() {
     autoHideMenuBar: true,
     webPreferences: {
       preload: require('path').join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-      webSecurity: true,
-      allowRunningInsecureContent: false,
-      webviewTag: false
+      ...WINDOW_WEB_PREFERENCES
     }
   });
 
-  win.webContents.setWindowOpenHandler(({ url }) => {
-    openExternalIfSafe(url);
-    return { action: 'deny' };
+  win.webContents.on('did-create-window', (childWindow) => {
+    configureWebContents(childWindow.webContents);
   });
 
-  win.webContents.on('will-navigate', (event, url) => {
-    if (isAppUrl(url)) {
-      return;
-    }
-
-    event.preventDefault();
-    openExternalIfSafe(url);
-  });
-
-  win.webContents.on('will-redirect', (event, url) => {
-    if (isAppUrl(url)) {
-      return;
-    }
-
-    event.preventDefault();
-    openExternalIfSafe(url);
-  });
+  configureWebContents(win.webContents);
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type === 'keyDown' && input.key === 'F5') {
