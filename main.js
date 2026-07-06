@@ -9,7 +9,12 @@ const START_URL = 'https://chatgpt.com';
 const APP_HOST_SUFFIXES = ['chatgpt.com', 'openai.com'];
 const AUTH_HOSTS = ['accounts.google.com'];
 const EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
-const ALLOWED_PERMISSIONS = new Set(['media', 'notifications']);
+const ALLOWED_PERMISSIONS = new Set([
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'media',
+  'notifications'
+]);
 const WINDOW_WEB_PREFERENCES = {
   contextIsolation: true,
   nodeIntegration: false,
@@ -131,8 +136,8 @@ const REFRESH_BUTTON_SCRIPT = `
   const host = document.createElement('div');
   host.id = hostId;
   host.style.position = 'fixed';
-  host.style.top = '12px';
-  host.style.right = '14px';
+  host.style.top = '64px';
+  host.style.right = '72px';
   host.style.zIndex = '2147483647';
 
   const shadow = host.attachShadow({ mode: 'closed' });
@@ -235,6 +240,10 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => (
+    ALLOWED_PERMISSIONS.has(permission) && isAppUrl(requestingOrigin || webContents?.getURL())
+  ));
+
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const requestingUrl = details.requestingUrl || webContents.getURL();
 
